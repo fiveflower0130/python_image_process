@@ -1,0 +1,9 @@
+# system executing files
+__pycache__
+
+# output folder
+log
+output
+
+# virtual environment
+venv

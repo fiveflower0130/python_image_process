@@ -26,7 +26,8 @@ class ImageToBinary:
         self._folder_list = None
         self._image_queue = None
         self._thread_num = 1
-        self._windows_size = cv2.WINDOW_NORMAL  #cv2.WINDOW_KEEPRATIO->自適比例 cv2.WINDOW_NORMAL->可調視窗
+        # cv2.WINDOW_KEEPRATIO->自適比例 cv2.WINDOW_NORMAL->可調視窗
+        self._windows_size = cv2.WINDOW_NORMAL
         self._logger = Logger.__call__().get_logger()
 
     def _get_color_range(self, area: str) -> dict:
@@ -386,8 +387,9 @@ class ImageToBinary:
                             file_path = os.path.join(root, file)
                             folder_images.put(file_path)
             else:
-                raise ValueError(f"Can't idetify path '{input_path}', please check input path!")
-            return folder_dirs, folder_images                          
+                raise ValueError(
+                    f"Can't idetify path '{input_path}', please check input path!")
+            return folder_dirs, folder_images
         else:
             raise ValueError('Please check your folder path value!')
 
@@ -434,14 +436,13 @@ class ImageToBinary:
         image_path: str,
         output_type: str,
     ) -> dict:
-        '''將圖片依照 rotate, flip, rotate filp 處理後輸出二元圖 
+        '''將圖片依照 彩色 灰階 黑白進行rotate, flip, rotate filp 處理後輸出二元圖 
 
         Args:
             image_path: 圖片的位置
             output_type: 輸出的圖片格式，預設格式='binary'可以選擇'gray'
-            folder_path: 輸出的圖片位置(預設路徑=/output，若要自行設定請以絕對路徑輸入)
 
-        Returns: dict
+        Returns: dict (處理後的圖片會存成dict回傳)
         '''
         try:
             # self._ouput_folder_check(folder_path, output_type)
@@ -503,7 +504,16 @@ class ImageToBinary:
         # cv2.imwrite('L201030128_Total_35_1.png', merge_original_image,
         #             [cv2.IMWRITE_PNG_COMPRESSION, 5])
 
-    def get_image_output(self, thread_num: str, output_type: str, output_path:str):
+    def get_image_output(self, thread_num: str, output_type: str, output_path: str):
+        '''將圖片依照 rotate, flip, rotate filp 處理後輸出二元圖 
+
+        Args:
+            image_path: 圖片的位置
+            output_type: 輸出的圖片格式，預設格式='binary'可以選擇'gray'
+            output_path: 輸出的圖片位置(預設路徑=/output，若要自行設定請以絕對路徑輸入)
+
+        Returns: dict
+        '''
         try:
             # self._ouput_folder_check(output_path, output_type)
             while self._image_queue.qsize() > 0:
@@ -511,13 +521,17 @@ class ImageToBinary:
                 image_name = image_path.split('.')[0]
                 image_type = image_path.split('.')[1]
                 print(thread_num, ": ", image_path)
-                transfer_dict = self.get_image_transfer(image_path, output_type)
+                transfer_dict = self.get_image_transfer(
+                    image_path, output_type)
                 for num, image in transfer_dict.items():
                     if image_type != "png":
-                        cv2.imencode('.jpg', image)[1].tofile(os.path.join(output_path, f"{image_name}_{num}.jpg"))
+                        cv2.imencode('.jpg', image)[1].tofile(
+                            os.path.join(output_path, f"{image_name}_{num}.jpg"))
                     else:
-                        cv2.imencode('.png', image)[1].tofile(os.path.join(output_path, f"{image_name}_{num}.png"))
-            self._logger.info(f"images output to path {output_path} successlly!")
+                        cv2.imencode('.png', image)[1].tofile(
+                            os.path.join(output_path, f"{image_name}_{num}.png"))
+            self._logger.info(
+                f"images output to path {output_path} successlly!")
         except Exception as e:
             self._logger.error(e)
         return
@@ -605,14 +619,22 @@ class ImageToBinary:
         except Exception as e:
             self._logger.error(e)
 
-    def run(self, input_path:str, output_type:str, output_path:str = 'output'):
+    def run(self, input_path: str, output_type: str, output_path: str = 'output'):
         '''
-        執行mutithreading跑image transfer and image ouput
+        執行跑image transfer and image ouput，可mutithreading
+        Args:
+            input_path: 圖片的位置，可以是圖片或是目錄
+            output_type: 輸出圖片的類型，可選取"original"、"gray"或是"binary"
+            output_path: 輸出圖片的位置，預設路徑為"output"
+
+        Returns: None
         '''
         thread_list = []
-        self._folder_list, self._image_queue= self._input_path_check(input_path)
-        output_path = self._ouput_folder_check(output_path, output_type, self._folder_list)
-        
+        self._folder_list, self._image_queue = self._input_path_check(
+            input_path)
+        output_path = self._ouput_folder_check(
+            output_path, output_type, self._folder_list)
+
         for i in range(self._thread_num):
             process = threading.Thread(target=self.get_image_output,
                                        args=(str(i), output_type, output_path),

@@ -1,13 +1,13 @@
-from array import array
-import queue
 import cv2
 import numpy as np
+import time
+import queue
 import os
 import threading
 from logger import Logger
 
 
-class ImageToBinary:
+class ImageProcess:
 
     def __init__(self):
         self.HSV = None
@@ -23,9 +23,10 @@ class ImageToBinary:
         self._au_hsv_lower = (60, 255, 255)
         self._au_hsv_upper = (99, 255, 255)
         self._square_fit_size = 224
+        self._folder_root = None
         self._folder_list = None
         self._image_queue = None
-        self._thread_num = 1
+        self._thread_num = 3
         # cv2.WINDOW_KEEPRATIO->自適比例 cv2.WINDOW_NORMAL->可調視窗
         self._windows_size = cv2.WINDOW_NORMAL
         self._logger = Logger.__call__().get_logger()
@@ -372,44 +373,52 @@ class ImageToBinary:
             raise ValueError('Please input right image type!')
 
     def _input_path_check(self, input_path: str) -> None:
+        '''確認資料夾是否存在若不在則創建新的
+        Args:
+            folder_path: 欲確認之資料夾主路徑
+            sub_path: 欲確認之輸出資料夾路徑
+            data_dirs ?: 欲轉換的資料夾路徑，如果有則會照原路徑產生若無則跳過
+        Returns: output path
+        '''
         if isinstance(input_path, str):
+            folder_root = []
             folder_dirs = []
             folder_images = queue.Queue()
             if os.path.isfile(input_path):
                 folder_images.put(input_path)
             elif os.path.isdir(input_path):
                 for root, dirs, files in os.walk(input_path):
+                    folder_root.append(root)
                     for dir in dirs:
                         dir_path = os.path.join(root, dir)
                         folder_dirs.append(dir_path)
                     for file in files:
-                        if file.endswith('.jpg') or file.endswith('.png') or file.endswith('.jpeg'):
+                        if file.endswith('.jpg') or file.endswith(
+                                '.png') or file.endswith('.jpeg'):
                             file_path = os.path.join(root, file)
                             folder_images.put(file_path)
             else:
                 raise ValueError(
-                    f"Can't idetify path '{input_path}', please check input path!")
-            return folder_dirs, folder_images
+                    f"Can't idetify path '{input_path}', please check input path!"
+                )
+            return folder_root, folder_dirs, folder_images
         else:
             raise ValueError('Please check your folder path value!')
 
-    def _ouput_folder_check(self,
-                            output_path: str,
-                            type_path: str,
-                            data_dirs: list) -> str:
+    def _ouput_folder_check(self, output_path: str, type_path: str, data_dirs: list) -> str:
         '''確認資料夾是否存在若不在則創建新的
-
+        
         Args:
             folder_path: 欲確認之資料夾主路徑
             sub_path: 欲確認之輸出資料夾路徑
             data_dirs ?: 欲轉換的資料夾路徑，如果有則會照原路徑產生若無則跳過
-
+            
         Returns: output path
         '''
-        # if os.path.exists(folder_path):
-        #     shutil.rmtree(folder_path)
+        # if os.path.exists(output_path):
+        #     shutil.rmtree(output_path)
         #     self._logger.info(
-        #         f"Previous prediction folder: {folder_path} has been remove!!")
+        #         f"Previous prediction folder: {output_path} has been remove!!")
         if isinstance(output_path, str) and isinstance(type_path, str):
             output_folder_path = os.path.join(output_path, type_path)
             if not os.path.exists(output_folder_path):
@@ -418,6 +427,7 @@ class ImageToBinary:
                     f"output folder: {output_folder_path} has been created!!")
             if len(data_dirs) > 0:
                 for dir in data_dirs:
+                    dir = dir.replace(f"{self._folder_root[0]}\\", "")
                     data_folder_dir = os.path.join(output_folder_path, dir)
                     if not os.path.exists(data_folder_dir):
                         os.makedirs(data_folder_dir)
@@ -435,19 +445,17 @@ class ImageToBinary:
         self,
         image_path: str,
         output_type: str,
+        output_more:bool = False
     ) -> dict:
         '''將圖片依照 彩色 灰階 黑白進行rotate, flip, rotate filp 處理後輸出二元圖 
-
+        
         Args:
             image_path: 圖片的位置
             output_type: 輸出的圖片格式，預設格式='binary'可以選擇'gray'
-
+            
         Returns: dict (處理後的圖片會存成dict回傳)
         '''
         try:
-            # self._ouput_folder_check(folder_path, output_type)
-            # image_name = image_path.split('.')[0]
-            # image_type = image_path.split('.')[1]
             transfer_dict = {}
 
             # read image
@@ -458,42 +466,28 @@ class ImageToBinary:
 
             # get part of image pollution and frame
             pollution = self._pollution_area(image_resize, output_type)
-            # cv2.imshow('pollution', pollution)
             frame = self._frame_area(image_resize, output_type)
+            # cv2.imshow('pollution', pollution)
             # cv2.imshow('frame', frame)
-
-            # make image rotate, flip
-            rotate_image = self._image_rotate(pollution)
-            flip_image = self._image_flip(pollution)
-            rotate_flip_image = self._image_rotate(flip_image)
+            # cv2.waitKey(0)
 
             # output image dict name: 1->original 2->rotate, 3->flip, 4->flip and rotate
             transfer_dict["1"] = self._image_merge(pollution, frame)
-            transfer_dict["2"] = self._image_merge(rotate_image, frame)
-            transfer_dict["3"] = self._image_merge(flip_image, frame)
-            transfer_dict["4"] = self._image_merge(rotate_flip_image, frame)
-            # cv2.waitKey(0)
+            # make image rotate, flip
+            if output_more == True:
+                rotate_image = self._image_rotate(pollution)
+                flip_image = self._image_flip(pollution)
+                rotate_flip_image = self._image_rotate(flip_image)
+                transfer_dict["2"] = self._image_merge(rotate_image, frame)
+                transfer_dict["3"] = self._image_merge(flip_image, frame)
+                transfer_dict["4"] = self._image_merge(rotate_flip_image, frame)
+
             if output_type != 'original':
                 for num, image in transfer_dict.items():
                     # 黑白反轉
                     transfer_dict[num] = cv2.bitwise_not(image, image)
-            self._logger.info(
-                f"{image_path} has completely transferred to '{output_type}' and output completely"
-            )
-            return transfer_dict
-            # for num, image in transfer_dict.items():
-            #     # 黑白反轉
-            #     if output_type != 'original':
-            #         image = cv2.bitwise_not(image, image)
 
-            #     if image_type != "png":
-            #         cv2.imencode('.jpg', image)[1].tofile(
-            #             os.path.join(folder_path, output_type,
-            #                          f"{image_name}_{num}.jpg"))
-            #     else:
-            #         cv2.imencode('.png', image)[1].tofile(
-            #             os.path.join(folder_path, output_type,
-            #                          f"{image_name}_{num}.png"))
+            return transfer_dict
 
         except Exception as e:
             self._logger.error(e)
@@ -504,37 +498,40 @@ class ImageToBinary:
         # cv2.imwrite('L201030128_Total_35_1.png', merge_original_image,
         #             [cv2.IMWRITE_PNG_COMPRESSION, 5])
 
-    def get_image_output(self, thread_num: str, output_type: str, output_path: str):
-        '''將圖片依照 rotate, flip, rotate filp 處理後輸出二元圖 
-
+    def get_image_output(self, thread_num: str, output_type: str,
+                         output_path: str, output_more:bool):
+        '''將處理後的圖片輸出 
         Args:
             image_path: 圖片的位置
             output_type: 輸出的圖片格式，預設格式='binary'可以選擇'gray'
             output_path: 輸出的圖片位置(預設路徑=/output，若要自行設定請以絕對路徑輸入)
-
         Returns: dict
         '''
         try:
             # self._ouput_folder_check(output_path, output_type)
             while self._image_queue.qsize() > 0:
+                image_root = self._folder_root
                 image_path = self._image_queue.get()
                 image_name = image_path.split('.')[0]
                 image_type = image_path.split('.')[1]
-                print(thread_num, ": ", image_path)
+                if len(image_root) > 0:
+                    image_name = image_name.replace(f"{image_root[0]}\\","")
+                print(
+                    f"Thread{thread_num} has started to process image '{image_path}' to folder '{output_path}'"
+                )
                 transfer_dict = self.get_image_transfer(
-                    image_path, output_type)
+                    image_path, output_type, output_more)
                 for num, image in transfer_dict.items():
                     if image_type != "png":
                         cv2.imencode('.jpg', image)[1].tofile(
-                            os.path.join(output_path, f"{image_name}_{num}.jpg"))
+                            os.path.join(output_path,
+                                         f"{image_name}_{num}.jpg"))
                     else:
                         cv2.imencode('.png', image)[1].tofile(
-                            os.path.join(output_path, f"{image_name}_{num}.png"))
-            self._logger.info(
-                f"images output to path {output_path} successlly!")
+                            os.path.join(output_path,
+                                         f"{image_name}_{num}.png"))
         except Exception as e:
             self._logger.error(e)
-        return
 
     def get_hsv_value(self, image_path: str) -> dict:
         '''調整圖片的HSV值，供參考
@@ -619,81 +616,95 @@ class ImageToBinary:
         except Exception as e:
             self._logger.error(e)
 
-    def run(self, input_path: str, output_type: str, output_path: str = 'output'):
+    def run(self,
+            input_path: str,
+            output_type: str,
+            output_path: str = 'output',
+            output_more:bool = False):
         '''
         執行跑image transfer and image ouput，可mutithreading
         Args:
             input_path: 圖片的位置，可以是圖片或是目錄
             output_type: 輸出圖片的類型，可選取"original"、"gray"或是"binary"
             output_path: 輸出圖片的位置，預設路徑為"output"
-
         Returns: None
         '''
-        thread_list = []
-        self._folder_list, self._image_queue = self._input_path_check(
-            input_path)
-        output_path = self._ouput_folder_check(
-            output_path, output_type, self._folder_list)
+        try:
+            thread_list = []
+            self._folder_root, self._folder_list, self._image_queue = self._input_path_check(
+                input_path)
+            output_folder_path = self._ouput_folder_check(
+                output_path, output_type, self._folder_list)
+            for i in range(self._thread_num):
+                process = threading.Thread(target=self.get_image_output,
+                                           args=(str(i), 
+                                                 output_type,
+                                                 output_folder_path,
+                                                 output_more),
+                                           daemon=True)
+                thread_list.append(process)
 
-        for i in range(self._thread_num):
-            process = threading.Thread(target=self.get_image_output,
-                                       args=(str(i), output_type, output_path),
-                                       daemon=True)
-            thread_list.append(process)
+            for i in range(self._thread_num):
+                thread_list[i].start()
 
-        for i in range(self._thread_num):
-            thread_list[i].start()
+            for i in range(self._thread_num):
+                thread_list[i].join()
 
-        for i in range(self._thread_num):
-            thread_list[i].join()
+        except Exception as e:
+            self._logger.error(e)
 
-    def image_test_(self, image_path: str) -> None:
-        '''
-        測試用請忽略
-        '''
-        # read image
-        image_original = self._cv_imread(image_path)
+    # def image_test_(self, image_path: str) -> None:
+    #     '''
+    #     測試用
+    #     '''
+    #     # read image
+    #     image_original = self._cv_imread(image_path)
 
-        # make image resize
-        image_resize = self._image_resize(image_original)
+    #     # make image resize
+    #     image_resize = self._image_resize(image_original)
 
-        cv2.imshow('image_resize', image_resize)
-        image_hsv = self._BGR_to_HSV(image_resize)
+    #     cv2.imshow('image_resize', image_resize)
+    #     image_hsv = self._BGR_to_HSV(image_resize)
 
-        # 从HSV图像中提取色调通道
-        mask_pollution = cv2.inRange(image_hsv, self._pollution_hsv_lower,
-                                     self._pollution_hsv_upper)
-        mask_frame = cv2.inRange(image_hsv, self._frame_hsv_lower,
-                                 self._frame_hsv_upper)
+    #     # 从HSV图像中提取色调通道
+    #     mask_pollution = cv2.inRange(image_hsv, self._pollution_hsv_lower,
+    #                                  self._pollution_hsv_upper)
+    #     mask_frame = cv2.inRange(image_hsv, self._frame_hsv_lower,
+    #                              self._frame_hsv_upper)
 
-        # image_mask = image_resize.copy()
-        # image_original_rotate = cv2.rotate(image_resize, cv2.ROTATE_180)
-        # mask_pollution_rotate = cv2.rotate(mask_pollution, cv2.ROTATE_180)
+    #     # image_mask = image_resize.copy()
+    #     # image_original_rotate = cv2.rotate(image_resize, cv2.ROTATE_180)
+    #     # mask_pollution_rotate = cv2.rotate(mask_pollution, cv2.ROTATE_180)
 
-        # image_original_flip = cv2.flip(image_resize, 1)
-        # mask_pollution_flip = cv2.rotate(mask_pollution, cv2.ROTATE_180)
+    #     # image_original_flip = cv2.flip(image_resize, 1)
+    #     # mask_pollution_flip = cv2.rotate(mask_pollution, cv2.ROTATE_180)
 
-        pollution = cv2.bitwise_and(image_resize,
-                                    image_resize,
-                                    mask=mask_pollution)
-        pollution_rotate = cv2.rotate(pollution, cv2.ROTATE_180)
-        frame = cv2.bitwise_and(image_resize, image_resize, mask=mask_frame)
-        cv2.imshow('pollution', pollution_rotate)
-        cv2.imshow('frame', frame)
-        image_merge = cv2.bitwise_xor(pollution_rotate, frame)
-        cv2.imshow('image_merge', image_merge)
-        cv2.waitKey(0)
+    #     pollution = cv2.bitwise_and(image_resize,
+    #                                 image_resize,
+    #                                 mask=mask_pollution)
+    #     pollution_rotate = cv2.rotate(pollution, cv2.ROTATE_180)
+    #     frame = cv2.bitwise_and(image_resize, image_resize, mask=mask_frame)
+    #     cv2.imshow('pollution', pollution_rotate)
+    #     cv2.imshow('frame', frame)
+    #     image_merge = cv2.bitwise_xor(pollution_rotate, frame)
+    #     cv2.imshow('image_merge', image_merge)
+    #     cv2.waitKey(0)
 
 
-logPath = 'log'
+time_1 = time.time()
 imagePath = 'L201030128_金面汙染_Total_35.png'
-imagePath1 = 'C:\\Users\k09857\\Desktop\\k09857\\pythonImage -Test\\prediction_result'
-imagePath2 = 'prediction_result'
+imagePath1 = 'C:\\Users\\k09857\\Desktop\\idenprof\\au_pollution_defect_images\\20220321_exec_images\\first_expriment\\train\\panel'
+imagePath2 = 'C:\\Users\\k09857\\Desktop\\idenprof\\au_pollution_detect_resource\\au_defect_experiment_20220401\\train\\strip'
 output = ['original', 'gray', 'binary']
-b = ImageToBinary()
+b = ImageProcess()
 # result = b.adjust_hsv_value(filePath, "frame")
 # result = b.get_hsv_value(filePath)
 # b.get_image_transfer(imagePath, output[2])
 # b.image_test(filePath)
 # b.get_image_output(imagePath, output[2])
-b.run(logPath, output[0])
+for i in range(len(output)):
+    b.run(imagePath, output[i])
+
+time_2 = time.time()
+time_interval = time_2 - time_1
+print("time: ", time_interval)

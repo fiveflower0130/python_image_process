@@ -1,5 +1,6 @@
 # system executing files
 __pycache__
+.DS_Store
 
 # output folder
 log
